@@ -19,6 +19,8 @@
 
 # production
 /build
+prisma/*.db
+prisma/*.db-journal
 
 # misc
 .DS_Store
