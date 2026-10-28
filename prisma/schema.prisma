@@ -1,0 +1,140 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum AgentStatus {
+  ACTIVE
+  PAUSED
+  REVOKED
+}
+
+enum DecisionStatus {
+  APPROVED
+  BLOCKED
+  NEEDS_USER_APPROVAL
+}
+
+enum PaymentStatus {
+  PENDING
+  APPROVAL_REQUIRED
+  COMPLETED
+  FAILED
+  REJECTED
+}
+
+model User {
+  id            String          @id @default(cuid())
+  email         String          @unique
+  name          String
+  passwordHash  String
+  agents        Agent[]
+  mandates      Mandate[]
+  auditEvents   AuditEvent[]
+  createdAt     DateTime        @default(now())
+}
+
+model Agent {
+  id              String           @id @default(cuid())
+  userId          String
+  name            String
+  description     String?
+  apiKeyHash      String
+  status          AgentStatus      @default(ACTIVE)
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mandates        Mandate[]
+  paymentRequests PaymentRequest[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+}
+
+model Mandate {
+  id              String           @id @default(cuid())
+  userId          String
+  agentId         String
+  token           String
+  expiresAt       DateTime
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agent           Agent            @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  policy          Policy?
+  paymentRequests PaymentRequest[]
+  createdAt       DateTime         @default(now())
+}
+
+model Policy {
+  id                 String   @id @default(cuid())
+  mandateId          String   @unique
+  perTransactionCap  Float
+  dailyLimit         Float
+  weeklyLimit        Float
+  monthlyLimit       Float
+  currency           String   @default("USD")
+  allowedMerchants   Json
+  blockedMerchants   Json
+  allowedCategories  Json
+  askUserAboveAmount Float
+  allowedHours       Json?
+  maxRequestsPerHour Int
+  mandate            Mandate  @relation(fields: [mandateId], references: [id], onDelete: Cascade)
+}
+
+model PaymentRequest {
+  id                 String         @id @default(cuid())
+  agentId            String
+  mandateId          String
+  merchantName       String
+  merchantPayPalEmail String?
+  amount             Float
+  currency           String
+  category           String
+  userInstruction    String
+  agentReasoning     String
+  idempotencyKey     String
+  decision           DecisionStatus
+  reasons            Json
+  llmResult          Json?
+  status             PaymentStatus @default(PENDING)
+  agent              Agent          @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  mandate            Mandate        @relation(fields: [mandateId], references: [id], onDelete: Cascade)
+  payment            Payment?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  @@unique([agentId, idempotencyKey])
+}
+
+model Decision {
+  id               String          @id @default(cuid())
+  paymentRequestId String          @unique
+  status           DecisionStatus
+  reasons          Json
+  createdAt        DateTime        @default(now())
+}
+
+model Payment {
+  id               String        @id @default(cuid())
+  paymentRequestId String        @unique
+  paypalId         String?
+  approvalUrl      String?
+  status           PaymentStatus
+  result           Json?
+  paymentRequest   PaymentRequest @relation(fields: [paymentRequestId], references: [id], onDelete: Cascade)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+}
+
+model AuditEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  sequence  Int
+  type      String
+  payload   Json
+  prevHash  String
+  hash      String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  @@unique([userId, sequence])
+}

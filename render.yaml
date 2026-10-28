@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: agent-wallet-guard
+    runtime: docker
+    plan: starter
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        value: file:/var/data/agent-wallet-guard.db
+      - key: PAYPAL_BASE_URL
+        value: https://api-m.sandbox.paypal.com
+      - key: PAYMENT_MODE
+        value: payouts
+      - key: MANDATE_SIGNING_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: LLM_MODEL
+        value: claude-3-5-sonnet-latest
+      - key: APP_BASE_URL
+        sync: false
+    disk:
+      name: agent-wallet-guard-data
+      mountPath: /var/data
+      sizeGB: 1
