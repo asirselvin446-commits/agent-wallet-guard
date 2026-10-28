@@ -40,6 +40,7 @@ export default function Dashboard() {
   const [task, setTask] = useState(scenarios[0].instruction);
   const [simResult, setSimResult] = useState<RequestRow | Record<string, unknown> | null>(null);
   const simulationAttempt = useRef<{ signature: string; idempotencyKey: string } | null>(null);
+  const [needsDemoRepair, setNeedsDemoRepair] = useState(false);
   const [newAgentName, setNewAgentName] = useState("");
   const [newAgentDescription, setNewAgentDescription] = useState("");
   const [revealedKey, setRevealedKey] = useState("");
@@ -75,7 +76,8 @@ export default function Dashboard() {
   const blocked = requests.filter((r) => r.decision === "BLOCKED").length;
   const spend = requests.filter((r) => r.status === "COMPLETED" && new Date(r.createdAt).getTime() > asOf - 7 * 86400000).reduce((sum, r) => sum + r.amount, 0);
   const weekLimit = agents[0]?.mandates?.[0]?.policy?.weeklyLimit ?? 100;
-  const demoMandate = agents.find((agent) => agent.id === "demo-agent")?.mandates?.slice().sort((a, b) => new Date(b.expiresAt).getTime() - new Date(a.expiresAt).getTime())[0];
+  const demoAgent = agents.find((agent) => agent.description === "Seeded agent for the simulator" && agent.status === "ACTIVE");
+  const demoMandate = demoAgent?.mandates?.slice().sort((a, b) => new Date(b.expiresAt).getTime() - new Date(a.expiresAt).getTime())[0];
   const demoMandateId = demoMandate?.id || "demo-mandate";
   const demoMerchantEmail = demoMandate?.policy?.allowedMerchantEmails?.[0] || "merchant@example.com";
   const visibleAudit = useMemo(() => audit.filter((event) => `${event.type} ${JSON.stringify(event.payload)}`.toLowerCase().includes(auditQuery.toLowerCase())), [audit, auditQuery]);
@@ -122,13 +124,27 @@ export default function Dashboard() {
       if (!response) throw new Error("The simulator could not connect. Retry this same request to safely retrieve its result.");
       const result = await response.json().catch(() => null);
       if (!response.ok) {
+        if (result && ["DEMO_AGENT_REVOKED", "DEMO_AGENT_MISSING", "DEMO_MANDATE_INACTIVE"].includes(result.code)) setNeedsDemoRepair(true);
         if (response.status >= 400 && response.status < 500 && response.status !== 429) simulationAttempt.current = null;
         throw new Error(result && typeof result.error === "string" ? result.error : `The simulator service returned ${response.status}. Retry this same request if the result is still unknown.`);
       }
       if (!result || typeof result !== "object") throw new Error("The simulator returned an unreadable response. Retry this same request to safely retrieve its result.");
       simulationAttempt.current = null;
+      setNeedsDemoRepair(false);
       setSimResult(result); setNotice("Payment request evaluated."); await refresh(true);
     } catch (err) { setError(err instanceof Error ? err.message : "The simulator request failed."); }
+    finally { setBusy(""); }
+  }
+  async function repairDemoAgent() {
+    setBusy("repair-demo"); setError(""); setNotice("");
+    try {
+      const response = await fetch("/api/simulator/repair", { method: "POST" });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(result && typeof result.error === "string" ? result.error : "The demo setup could not be repaired.");
+      setNeedsDemoRepair(false);
+      setNotice(result?.message || "The demo agent and mandate are ready.");
+      await refresh(true);
+    } catch (err) { setError(err instanceof Error ? err.message : "The demo setup could not be repaired."); }
     finally { setBusy(""); }
   }
   async function verify() {
@@ -165,7 +181,7 @@ export default function Dashboard() {
     <section className="main-column">
       <header className="topbar"><button className="icon-button mobile-menu" aria-label="Open menu" onClick={() => setMobileNav(true)}><Menu size={21} /></button><div className="breadcrumb">Wallet <ChevronRight size={15} /> <strong>{view}</strong></div><div className="topbar-actions"><span className="sandbox-pill"><span className="sandbox-dot" /> SANDBOX MODE</span><button className="icon-button refresh-button" aria-label="Refresh dashboard" onClick={() => void refresh()} disabled={refreshing}><RefreshCw size={17} className={refreshing ? "spin" : ""} /></button></div></header>
       <div className="content-wrap">
-        {(error || notice) && <div role={error ? "alert" : "status"} className={`flash ${error ? "flash-error" : "flash-success"}`}><span>{error || notice}{!error && paypalApprovalUrl && <> <a href={paypalApprovalUrl} target="_blank" rel="noreferrer" className="text-button">Continue with PayPal <ArrowUpRight size={14} /></a></>}</span><button className="icon-button" onClick={() => { setError(""); setNotice(""); setPaypalApprovalUrl(""); }} aria-label="Dismiss message"><X size={16} /></button></div>}
+        {(error || notice) && <div role={error ? "alert" : "status"} className={`flash ${error ? "flash-error" : "flash-success"}`}><span>{error || notice}{!error && paypalApprovalUrl && <> <a href={paypalApprovalUrl} target="_blank" rel="noreferrer" className="text-button">Continue with PayPal <ArrowUpRight size={14} /></a></>}{needsDemoRepair && view === "Simulator" && <button className="text-button" onClick={() => void repairDemoAgent()} disabled={Boolean(busy)}>{busy === "repair-demo" ? "Repairing demo setup…" : "Create replacement demo agent"}</button>}</span><button className="icon-button" onClick={() => { setError(""); setNotice(""); setPaypalApprovalUrl(""); }} aria-label="Dismiss message"><X size={16} /></button></div>}
         {view === "Overview" && <>
           <div className="page-heading"><div><p className="eyebrow">WALLET CONTROL CENTER</p><h1>Good to see you.</h1><p className="subheading">Here’s what’s happening with your agents and spending.</p></div><button className="button button-secondary" onClick={() => chooseView("Simulator")}><Play size={16} /> Try a payment</button></div>
           <div className="metric-grid"><Metric label="Spent this week" value={`$${spend.toFixed(2)}`} hint={`of $${weekLimit.toFixed(2)} weekly limit`} icon={CreditCard} tone="blue" progress={weekLimit ? Math.min(100, spend / weekLimit * 100) : 0} /><Metric label="Approved requests" value={String(approved)} hint="All time" icon={CircleCheck} tone="green" /><Metric label="Blocked requests" value={String(blocked)} hint="Stopped by your rules" icon={ShieldAlert} tone="red" /><Metric label="Need your review" value={String(pending.length)} hint={pending.length ? "Waiting for a decision" : "You’re all caught up"} icon={Clock3} tone="amber" /></div>
