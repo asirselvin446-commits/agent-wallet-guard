@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Activity, ArrowUpRight, Bot, Check, ChevronRight, CircleAlert, CircleCheck, Clock3, Copy, CreditCard, Download, FileCheck2, LayoutDashboard, LogOut, Menu, Play, Plus, RefreshCw, Shield, ShieldAlert, SlidersHorizontal, X } from "lucide-react";
 
@@ -39,6 +39,7 @@ export default function Dashboard() {
   const [scenario, setScenario] = useState(0);
   const [task, setTask] = useState(scenarios[0].instruction);
   const [simResult, setSimResult] = useState<RequestRow | Record<string, unknown> | null>(null);
+  const simulationAttempt = useRef<{ signature: string; idempotencyKey: string } | null>(null);
   const [newAgentName, setNewAgentName] = useState("");
   const [newAgentDescription, setNewAgentDescription] = useState("");
   const [revealedKey, setRevealedKey] = useState("");
@@ -56,7 +57,7 @@ export default function Dashboard() {
       setAudit(Array.isArray(auditData) ? auditData : []);
       setRequests(Array.isArray(requestData) ? requestData : []);
       setAsOf(Date.now());
-    } catch (err) { setError(err instanceof Error ? err.message : "Could not load the dashboard."); }
+    } catch (err) { if (!quiet) setError(err instanceof Error ? err.message : "Could not load the dashboard."); }
     finally { setLoading(false); setRefreshing(false); }
   }, [router]);
   useEffect(() => { const timer = window.setTimeout(() => { void refresh(); }, 0); return () => window.clearTimeout(timer); }, [refresh]);
@@ -95,10 +96,37 @@ export default function Dashboard() {
   async function simulate(event: React.FormEvent) {
     event.preventDefault(); setBusy("simulate"); setError(""); setNotice(""); setSimResult(null);
     const selected = scenarios[scenario];
+    const requestBody = { mandateId: demoMandateId, merchantName: selected.merchant, merchantPayPalEmail: demoMerchantEmail, amount: selected.amount, currency: "USD", category: selected.category, userInstruction: task, agentReasoning: selected.reasoning };
+    const signature = JSON.stringify(requestBody);
+    const previousAttempt = simulationAttempt.current;
+    if (previousAttempt && previousAttempt.signature !== signature) {
+      setError("A previous simulation may still have completed. Retry that same request before changing the scenario.");
+      setBusy("");
+      return;
+    }
+    const idempotencyKey = previousAttempt?.idempotencyKey || `s_${crypto.randomUUID().replaceAll("-", "")}`;
+    simulationAttempt.current = { signature, idempotencyKey };
     try {
-      const response = await fetch("/api/simulator/payment-requests", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mandateId: demoMandateId, merchantName: selected.merchant, merchantPayPalEmail: demoMerchantEmail, amount: selected.amount, currency: "USD", category: selected.category, userInstruction: task, agentReasoning: selected.reasoning, idempotencyKey: `s_${crypto.randomUUID().replaceAll("-", "")}` }) });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "The simulator request failed.");
+      let response: Response | undefined;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          response = await fetch("/api/simulator/payment-requests", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...requestBody, idempotencyKey }), signal: AbortSignal.timeout(25_000) });
+        } catch {
+          if (attempt === 2) throw new Error("The connection dropped before the result was confirmed. Retry this same request to safely retrieve its result.");
+          await new Promise((resolve) => window.setTimeout(resolve, 500 * (attempt + 1)));
+          continue;
+        }
+        if (![502, 503, 504].includes(response.status) || attempt === 2) break;
+        await new Promise((resolve) => window.setTimeout(resolve, 500 * (attempt + 1)));
+      }
+      if (!response) throw new Error("The simulator could not connect. Retry this same request to safely retrieve its result.");
+      const result = await response.json().catch(() => null);
+      if (!response.ok) {
+        if (response.status >= 400 && response.status < 500 && response.status !== 429) simulationAttempt.current = null;
+        throw new Error(result && typeof result.error === "string" ? result.error : `The simulator service returned ${response.status}. Retry this same request if the result is still unknown.`);
+      }
+      if (!result || typeof result !== "object") throw new Error("The simulator returned an unreadable response. Retry this same request to safely retrieve its result.");
+      simulationAttempt.current = null;
       setSimResult(result); setNotice("Payment request evaluated."); await refresh(true);
     } catch (err) { setError(err instanceof Error ? err.message : "The simulator request failed."); }
     finally { setBusy(""); }
