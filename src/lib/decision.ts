@@ -17,9 +17,9 @@ const riskReplySchema = z.object({
 
 async function riskCheck(input: Input, policy: Policy) {
   const apiKey = process.env.GEMINI_API_KEY;
-  const model = process.env.GEMINI_MODEL;
+  const configuredModel = process.env.GEMINI_MODEL || process.env.LLM_MODEL;
+  const model = configuredModel?.startsWith("gemini-") ? configuredModel : "gemini-2.5-flash";
   if (!apiKey) throw new Error("Gemini risk service is not configured");
-  if (!model) throw new Error("GEMINI_MODEL is not configured");
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: "POST", signal: AbortSignal.timeout(12_000),
     headers: { "x-goog-api-key": apiKey, "content-type": "application/json" },
@@ -142,7 +142,7 @@ export async function evaluate(input: Input): Promise<Result> {
     if (llmResult.risk === "medium") needsUserApproval = true;
   } catch (error) {
     const failure = error instanceof Error ? error.message : "";
-    const issue = failure === "Gemini risk service is not configured" ? "Gemini API key is not configured" : failure === "GEMINI_MODEL is not configured" ? "Gemini model is not configured" : /^Gemini request failed \(401\)|^Gemini request failed \(403\)/.test(failure) ? "Gemini rejected the API credentials" : /^Gemini request failed \(429\)/.test(failure) ? "Gemini rate limit reached" : "Gemini risk check failed or returned invalid data";
+    const issue = failure === "Gemini risk service is not configured" ? "Gemini API key is not configured" : /^Gemini request failed \(401\)|^Gemini request failed \(403\)/.test(failure) ? "Gemini rejected the API credentials" : /^Gemini request failed \(429\)/.test(failure) ? "Gemini rate limit reached" : "Gemini risk check failed or returned invalid data";
     reasons.push(`Review required: ${issue} (fail-safe manual review)`);
     return { status: "NEEDS_USER_APPROVAL", reasons, llmResult: { risk: "unknown", task_match: false, price_reasonable: false, flags: ["Risk check unavailable"], explanation: `Manual review is required because ${issue.toLowerCase()}.` } };
   }
