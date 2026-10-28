@@ -33,7 +33,8 @@ export async function POST(_: Request, context: { params: Promise<{ id: string }
     } catch (error) {
       const code = error instanceof Error ? error.message : "";
       const status = code === "REQUEST_NOT_FOUND" ? 404 : code === "REQUEST_NOT_PENDING" || code === "MANDATE_NOT_ACTIVE" || code.endsWith("_LIMIT_REACHED") ? 409 : 400;
-      if (["REQUEST_NOT_FOUND", "REQUEST_NOT_PENDING", "MANDATE_NOT_ACTIVE", "DAILY_LIMIT_REACHED", "WEEKLY_LIMIT_REACHED", "MONTHLY_LIMIT_REACHED", "VELOCITY_LIMIT_REACHED"].includes(code)) return Response.json({ error: code.replaceAll("_", " ").toLowerCase() }, { status });
+      if (code === "MANDATE_NOT_ACTIVE") return Response.json({ error: "This request's agent is inactive or its mandate has expired. Resume the agent and issue a new mandate, then submit a new request." }, { status });
+      if (["REQUEST_NOT_FOUND", "REQUEST_NOT_PENDING", "DAILY_LIMIT_REACHED", "WEEKLY_LIMIT_REACHED", "MONTHLY_LIMIT_REACHED", "VELOCITY_LIMIT_REACHED"].includes(code)) return Response.json({ error: code.replaceAll("_", " ").toLowerCase() }, { status });
       throw error;
     }
     if (request.existing) return Response.json({ payment: request.existing, message: "This request already has a payment attempt." });

@@ -49,7 +49,7 @@ The response includes the decision, each evaluated rule, risk-check details, and
 
 ## Configuration
 
-`PAYMENT_MODE=payouts` sends payouts to allowlisted Sandbox recipient emails. PayPal's initial payout response remains pending until status refresh confirms completion. `PAYMENT_MODE=orders` creates a Checkout order, returns its approval URL, and captures it on PayPal's return to the app. The configured base URL is validated against the Sandbox hostname; live PayPal endpoints are rejected. Missing LLM credentials route requests to manual approval. In local development, missing PayPal credentials produce a pending, labeled simulation and never a fake completed payment. Production simulation requires explicitly setting `ALLOW_SIMULATED_PAYMENTS=true`; keep it false for real Sandbox demonstrations.
+`PAYMENT_MODE=payouts` sends payouts to allowlisted Sandbox recipient emails. PayPal's initial payout response remains pending until status refresh confirms completion. `PAYMENT_MODE=orders` creates a Checkout order, returns its approval URL, and captures it on PayPal's return to the app. The configured base URL is validated against the Sandbox hostname; live PayPal endpoints are rejected. Set the server-side `GEMINI_API_KEY` to enable Gemini risk assessment; `GEMINI_MODEL` defaults to `gemini-2.5-flash`. Missing Gemini credentials or an unavailable risk check route requests to manual approval. In local development, missing PayPal credentials produce a pending, labeled simulation and never a fake completed payment. Production simulation requires explicitly setting `ALLOW_SIMULATED_PAYMENTS=true`; keep it false for real Sandbox demonstrations.
 
 ## Supabase database configuration
 
@@ -75,7 +75,7 @@ The dashboard's audit section can recompute the chain. Any changed payload/hash 
 
 ## Android APK
 
-The Android app is a Capacitor shell around the Next.js dashboard. The Next.js server remains the secure backend; do not put PayPal or Anthropic secrets in the APK.
+The Android app is a Capacitor shell around the Next.js dashboard. The Next.js server remains the secure backend; do not put PayPal or Gemini secrets in the APK.
 
 1. Add `CAPACITOR_SERVER_URL` to `.env` and set it to the URL the Android WebView should load. Capacitor loads this value from `.env` when synchronizing.
 2. Install Android Studio and the Android SDK, then ensure `adb` and Java/Gradle are available.

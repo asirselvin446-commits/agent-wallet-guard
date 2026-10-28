@@ -28,9 +28,9 @@ services:
         sync: false
       - key: ALLOW_SIMULATED_PAYMENTS
         value: "false"
-      - key: ANTHROPIC_API_KEY
+      - key: GEMINI_API_KEY
         sync: false
-      - key: LLM_MODEL
-        value: claude-3-5-sonnet-latest
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
       - key: APP_BASE_URL
         sync: false

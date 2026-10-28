@@ -16,7 +16,7 @@ const policy = {
 
 beforeEach(() => {
   vi.stubEnv("PAYMENT_MODE", "payouts");
-  vi.stubEnv("ANTHROPIC_API_KEY", "");
+  vi.stubEnv("GEMINI_API_KEY", "");
   agentFindUnique.mockResolvedValue({ id: "agent-1", userId: "owner-1", status: "ACTIVE", mandates: [{ userId: "owner-1", expiresAt: new Date(Date.now() + 86400000), token: "signed-token", policy }] });
   verifyMandate.mockResolvedValue({ payload: { typ: "mandate", sub: "agent-1", userId: "owner-1", scope: "spend" } });
   requestFindMany.mockResolvedValue([]);
