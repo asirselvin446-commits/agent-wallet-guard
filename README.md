@@ -1,13 +1,14 @@
 # Agent Wallet Guard
 
-Agent Wallet Guard is a local-first Next.js MVP that places a policy and audit boundary between an AI agent and a PayPal Sandbox account. It evaluates every payment request server-side, supports Payouts and Orders v2 providers, and records a tamper-evident SHA-256 audit chain.
+Agent Wallet Guard is a Next.js MVP that places a policy and audit boundary between an AI agent and a PayPal Sandbox account. It evaluates every payment request server-side, uses Supabase PostgreSQL through Prisma, supports Payouts and Orders v2 providers, and records a tamper-evident SHA-256 audit chain.
 
 ## Setup
 
 1. Copy `.env.example` to `.env`.
-2. Set `MANDATE_SIGNING_SECRET` to a long random value. Add PayPal Sandbox credentials for real Sandbox calls; without credentials the app uses a clearly labeled demo provider response.
-3. Install dependencies with `npm install`.
-4. Create the SQLite schema and seed the admin, demo agent, mandate, and policy:
+2. Replace `DATABASE_URL` with the Prisma connection string from your Supabase project. Do not use the Supabase publishable key as `DATABASE_URL`.
+3. Set `MANDATE_SIGNING_SECRET` to a long random value. Add PayPal Sandbox credentials for real Sandbox calls; without credentials the app uses a clearly labeled demo provider response.
+4. Install dependencies with `npm install`.
+5. Create the Supabase schema and seed the admin, demo agent, mandate, and policy:
 
    ```bash
    npm run db:push
@@ -32,6 +33,18 @@ The simulator calls the actual agent API with `Bearer demo-agent-key` and the se
 ## Configuration
 
 `PAYMENT_MODE=payouts` is the default and performs autonomous Sandbox payouts when merchant email and credentials are available. `PAYMENT_MODE=orders` creates a PayPal Checkout order and returns an approval URL. Missing PayPal or Anthropic credentials fail safe and are visible as demo/manual-approval behavior rather than silently using live services.
+
+## Supabase database configuration
+
+The application database is PostgreSQL on Supabase. In Supabase, open **Project Settings → Database → Connect → Prisma** and copy the connection string into `DATABASE_URL`. If the direct host is unavailable on your network, use the Supavisor session pooler URL supplied by Supabase. Run:
+
+```bash
+npx prisma generate
+npx prisma db push
+npm run db:seed
+```
+
+The `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` values are used only by the optional Supabase SSR client/middleware. Prisma must use the server-only database connection string.
 
 ## Validation
 
@@ -68,7 +81,7 @@ For USB debugging, start Next.js with `npm run dev -- --hostname 0.0.0.0`, run `
 
 ## Cloud hosting with Render
 
-`render.yaml` and `Dockerfile` are included for a Render deployment. The service uses a persistent disk because SQLite data must survive restarts. A free ephemeral service is not suitable for this database.
+`render.yaml` and `Dockerfile` are included for a Render deployment using Supabase PostgreSQL, so the Render service no longer needs a persistent disk.
 
 1. Push this folder to a GitHub repository.
 2. In Render, choose **New → Blueprint**, select the repository, and apply `render.yaml`.
@@ -77,4 +90,4 @@ For USB debugging, start Next.js with `npm run dev -- --hostname 0.0.0.0`, run `
 5. Set `APP_BASE_URL` to that HTTPS URL.
 6. Set `CAPACITOR_SERVER_URL` in the local `.env` to the same HTTPS URL, run `npx cap sync android`, and rebuild the APK.
 
-The cloud service runs `prisma db push` and seeds the admin/demo records when it starts. Change `ADMIN_PASSWORD` before the first deployment.
+The cloud service runs `prisma db push` and seeds the admin/demo records when it starts. Change `ADMIN_PASSWORD` before the first deployment and set the Supabase `DATABASE_URL` in Render.
