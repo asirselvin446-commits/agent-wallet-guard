@@ -1,38 +1,55 @@
 # Agent Wallet Guard
 
-Agent Wallet Guard is a Next.js MVP that places a policy and audit boundary between an AI agent and a PayPal Sandbox account. It evaluates every payment request server-side, uses Supabase PostgreSQL through Prisma, supports Payouts and Orders v2 providers, and records a tamper-evident SHA-256 audit chain.
+Agent Wallet Guard places a server-side policy and audit boundary between an AI agent and a PayPal Sandbox account. It evaluates each request against a signed mandate, requires review for uncertain LLM results, supports Sandbox Payouts and Checkout Orders, and records payment decisions in a verifiable hash chain. The dashboard includes agent management, mandate issuance, approvals, a judge-ready simulator, and a payment ledger.
 
 ## Setup
 
-1. Copy `.env.example` to `.env`.
-2. Replace `DATABASE_URL` with the Prisma connection string from your Supabase project. Do not use the Supabase publishable key as `DATABASE_URL`.
-3. Set `MANDATE_SIGNING_SECRET` to a long random value. Add PayPal Sandbox credentials for real Sandbox calls; without credentials the app uses a clearly labeled demo provider response.
+Use Node.js 20.9 or newer.
+
+1. Copy `.env.example` to `.env` and set `DATABASE_URL` and `DIRECT_URL` to your PostgreSQL database. For local development, a local PostgreSQL instance works; the included sample URLs are for Supabase.
+2. Set `MANDATE_SIGNING_SECRET` to a random value of at least 32 characters. Set `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and `DEMO_AGENT_API_KEY` to credentials you control.
+3. To run the full PayPal flow, use Sandbox app credentials only and keep `PAYPAL_BASE_URL` as `https://api-m.sandbox.paypal.com`. Choose `PAYMENT_MODE=orders` or `payouts`. If you do not have Sandbox credentials yet, local development uses a clearly labeled simulation that never calls PayPal.
 4. Install dependencies with `npm install`.
-5. Create the Supabase schema and seed the admin, demo agent, mandate, and policy:
+5. Create the schema and seed the dashboard user, demo agent, mandate, policy, and approved Sandbox recipient:
 
    ```bash
    npm run db:push
    npm run db:seed
    ```
 
-5. Start the app with `npm run dev`, then open `http://localhost:3000`.
+6. Start the app with `npm run dev`, then open `http://localhost:3000`.
 
-Default dashboard credentials are `admin@example.com` / `demo-password`; change them through `ADMIN_EMAIL` and `ADMIN_PASSWORD` before seeding.
+Local seed defaults are `admin@example.com` / `demo-password` with agent key `demo-agent-key`; replace all three before exposing an app beyond your development machine. Production seeding requires an admin password of at least 12 characters and an agent key of at least 32 characters.
 
 ## Demo
 
-The simulator calls the actual agent API with `Bearer demo-agent-key` and the seeded `demo-mandate`.
+The dashboard simulator is protected by the signed-in user session and uses the same payment decision service as the external agent API. It does not expose the demo agent API key to the browser. When PayPal credentials are configured, an approved request reaches the PayPal Sandbox. Without them, the ledger marks the result as **Local simulation** and does not claim a transfer occurred.
 
-- A $12 request to `sandbox-store.example` in `electronics` passes policy checks and uses the configured payment mode.
+- A $12 request to `sandbox-store.example` in `electronics` passes the seeded policy, then either creates a Sandbox payment or a visibly labeled local simulation.
 - Increase the amount above $20 to trigger the hard transaction-cap block.
 - Change the merchant to an unknown merchant to trigger the allowlist block.
 - Use `giftcards.example` or a disallowed category to trigger a hard block.
-- Put prompt-injection text in the reasoning field: it remains untrusted data and cannot override server rules.
+- Put prompt-injection text in the reasoning field: the LLM receives it as untrusted data, and hard policy blocks still take precedence.
 - Repeat approved requests until a daily/weekly limit is exceeded.
+
+For payout mode, the mandate also allowlists the merchant's Sandbox PayPal email. A merchant name match alone never authorizes an agent to redirect funds to another recipient.
+
+## Connect an agent
+
+Register an agent in **Agents** and copy its API key when shown. Issue a mandate in **Rules** and copy the mandate ID from the displayed mandate details. The key is stored hashed and cannot be recovered from the dashboard. Agents authenticate with `Authorization: Bearer <agent-key>` and should reuse the same idempotency key when retrying a request (maximum 38 letters, digits, `_` or `-`).
+
+```bash
+curl -X POST http://localhost:3000/api/agent/payment-requests \
+  -H "Authorization: Bearer $AGENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"mandateId":"demo-mandate","merchantName":"sandbox-store.example","merchantPayPalEmail":"merchant@example.com","amount":12,"currency":"USD","category":"electronics","userInstruction":"Buy a phone case under $20","agentReasoning":"The case matches the user request.","idempotencyKey":"judge-demo-0001"}'
+```
+
+The response includes the decision, each evaluated rule, risk-check details, and payment status. Retrying with the same agent and idempotency key returns the original result.
 
 ## Configuration
 
-`PAYMENT_MODE=payouts` is the default and performs autonomous Sandbox payouts when merchant email and credentials are available. `PAYMENT_MODE=orders` creates a PayPal Checkout order and returns an approval URL. Missing PayPal or Anthropic credentials fail safe and are visible as demo/manual-approval behavior rather than silently using live services.
+`PAYMENT_MODE=payouts` sends payouts to allowlisted Sandbox recipient emails. PayPal's initial payout response remains pending until status refresh confirms completion. `PAYMENT_MODE=orders` creates a Checkout order, returns its approval URL, and captures it on PayPal's return to the app. The configured base URL is validated against the Sandbox hostname; live PayPal endpoints are rejected. Missing LLM credentials route requests to manual approval. In local development, missing PayPal credentials produce a pending, labeled simulation and never a fake completed payment. Production simulation requires explicitly setting `ALLOW_SIMULATED_PAYMENTS=true`; keep it false for real Sandbox demonstrations.
 
 ## Supabase database configuration
 
@@ -44,7 +61,7 @@ npx prisma db push
 npm run db:seed
 ```
 
-The `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` values are used only by the optional Supabase SSR client/middleware. Prisma must use the server-only database connection string.
+Prisma uses the server-only `DATABASE_URL`. The `NEXT_PUBLIC_SUPABASE_*` values are optional and are not used for dashboard authentication or payment decisions.
 
 ## Validation
 
@@ -90,4 +107,4 @@ For USB debugging, start Next.js with `npm run dev -- --hostname 0.0.0.0`, run `
 5. Set `APP_BASE_URL` to that HTTPS URL.
 6. Set `CAPACITOR_SERVER_URL` in the local `.env` to the same HTTPS URL, run `npx cap sync android`, and rebuild the APK.
 
-The cloud service runs `prisma db push` and seeds the admin/demo records when it starts. Change `ADMIN_PASSWORD` before the first deployment and set the Supabase `DATABASE_URL` in Render.
+The container starts the web server directly; it does not run schema changes or reset demo credentials on every restart. Before the first deployment, apply the schema with `npm run db:push` and seed with `npm run db:seed` from a trusted environment configured with the same database URLs. Change `ADMIN_PASSWORD` before deployment and set the Supabase `DATABASE_URL` in Render.

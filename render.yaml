@@ -3,9 +3,12 @@ services:
     name: agent-wallet-guard
     runtime: docker
     plan: free
+    dockerCommand: npm run start
     healthCheckPath: /api/health
     envVars:
       - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
         sync: false
       - key: PAYPAL_BASE_URL
         value: https://api-m.sandbox.paypal.com
@@ -17,10 +20,14 @@ services:
         sync: false
       - key: ADMIN_PASSWORD
         sync: false
+      - key: DEMO_AGENT_API_KEY
+        sync: false
       - key: PAYPAL_CLIENT_ID
         sync: false
       - key: PAYPAL_CLIENT_SECRET
         sync: false
+      - key: ALLOW_SIMULATED_PAYMENTS
+        value: "false"
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: LLM_MODEL

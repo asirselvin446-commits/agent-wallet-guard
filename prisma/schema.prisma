@@ -75,6 +75,7 @@ model Policy {
   monthlyLimit       Float
   currency           String   @default("USD")
   allowedMerchants   Json
+  allowedMerchantEmails Json @default("[]")
   blockedMerchants   Json
   allowedCategories  Json
   askUserAboveAmount Float

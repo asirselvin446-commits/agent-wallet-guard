@@ -4,10 +4,16 @@ export async function GET(request: Request) {
   try {
     const user = await requireUser();
     const format = new URL(request.url).searchParams.get("format") || "json";
+    if (format !== "csv" && format !== "json") return Response.json({ error: "format must be csv or json" }, { status: 400 });
     const events = await db.auditEvent.findMany({ where: { userId: user.id }, orderBy: { sequence: "asc" } });
     if (format === "csv") {
       const header = "sequence,type,createdAt,prevHash,hash,payload";
-      const rows = events.map(e => [e.sequence, e.type, e.createdAt.toISOString(), e.prevHash, e.hash, JSON.stringify(e.payload).replaceAll('"', '""')].map(value => `"${value}"`).join(","));
+      const cell = (value: unknown) => {
+        const text = String(value);
+        const safe = /^[\s]*[=+@\-]/.test(text) ? `'${text}` : text;
+        return `"${safe.replaceAll('"', '""')}"`;
+      };
+      const rows = events.map(e => [e.sequence, e.type, e.createdAt.toISOString(), e.prevHash, e.hash, JSON.stringify(e.payload)].map(cell).join(","));
       return new Response([header, ...rows].join("\n"), { headers: { "content-type": "text/csv", "content-disposition": "attachment; filename=audit.csv" } });
     }
     return Response.json(events);

@@ -1,0 +1,10 @@
+.git
+.next
+node_modules
+android
+coverage
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
+*.log
